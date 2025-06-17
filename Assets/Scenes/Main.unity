@@ -223,6 +223,7 @@ GameObject:
   - component: {fileID: 794900388}
   - component: {fileID: 794900390}
   - component: {fileID: 794900389}
+  - component: {fileID: 794900392}
   - component: {fileID: 794900391}
   m_Layer: 5
   m_Name: VideoPlayer
@@ -265,7 +266,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 794900385}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f1b18029f52c30a419e6c50be1f6f4a0, type: 3}
   m_Name: 
@@ -395,6 +396,19 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!114 &794900392
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 794900385}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3702ea438597aa148a023878e3d10424, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  videoPath: E:/unityspace/VideoClip/Assets/sample.mp4
 --- !u!1 &1141126236
 GameObject:
   m_ObjectHideFlags: 0

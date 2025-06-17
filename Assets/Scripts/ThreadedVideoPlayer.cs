@@ -8,7 +8,7 @@ using FFmpeg.AutoGen;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class VideoPlayer : MonoBehaviour
+public class ThreadedVideoPlayer : MonoBehaviour
 {
     public string videoPath;
 
@@ -18,6 +18,7 @@ public class VideoPlayer : MonoBehaviour
     private RawImage rawImage;
     private AudioSource audioSource;
 
+    private Thread decodeThread;
     private bool isAudioReady = false;
 
     void Start()
@@ -31,15 +32,10 @@ public class VideoPlayer : MonoBehaviour
         SetupLogging();
         ConfigureHWDecoder(out var deviceType);
 
-        DecodeMedia(deviceType);
-    }
-
-    private void OnDestroy()
-    {
-        foreach (var texture in textureFrames)
-            Destroy(texture);
-
-        textureFrames.Clear();
+        UnityMainThreadDispatcher.Instance();
+        decodeThread = new Thread(() => DecodeMedia(deviceType));
+        decodeThread.IsBackground = true;
+        decodeThread.Start();
     }
 
     void Update()
@@ -57,6 +53,16 @@ public class VideoPlayer : MonoBehaviour
                 break;
             }
         }
+    }
+
+    private void OnDestroy()
+    {
+        decodeThread?.Join();
+
+        foreach (var texture in textureFrames)
+            Destroy(texture);
+            
+        textureFrames.Clear();
     }
 
     private static unsafe void SetupLogging()
@@ -125,16 +131,22 @@ public class VideoPlayer : MonoBehaviour
         // 记录图像帧和对应的显示时间
         msd.videoFrameDelegate += (bytes, width, height, ptsSec) =>
         {
-            Texture2D texture = new(width, height, TextureFormat.ARGB32, false);
-            texture.LoadRawTextureData(bytes);
-            texture.Apply();
-            textureFrames.Add(texture);
-            framePts.Add(ptsSec);
+            UnityMainThreadDispatcher.Instance().Enqueue(() =>
+            {
+                Texture2D texture = new(width, height, TextureFormat.ARGB32, false);
+                texture.LoadRawTextureData(bytes);
+                texture.Apply();
+                textureFrames.Add(texture);
+                framePts.Add(ptsSec);
+            });
         };
 
         msd.videoCompleteDelegate += (frameRate, width, height) =>
         {
-            rawImage.rectTransform.sizeDelta = new Vector2(width, height);
+            UnityMainThreadDispatcher.Instance().Enqueue(() =>
+            {
+                rawImage.rectTransform.sizeDelta = new Vector2(width, height);
+            });
         };
 
         // 音频缓存
@@ -148,17 +160,22 @@ public class VideoPlayer : MonoBehaviour
         msd.audioCompleteDelegate += (channels, sampleRate) =>
         {
             int totalSamples = allSamples.Count / channels;
-            AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, sampleRate, false);
-            clip.SetData(allSamples.ToArray(), 0);
-
-            audioSource.clip = clip;
+            UnityMainThreadDispatcher.Instance().Enqueue(() =>
+            {
+                AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, sampleRate, false);
+                clip.SetData(allSamples.ToArray(), 0);
+                audioSource.clip = clip;
+            });
         };
 
         msd.decodeCompleteDelegate += () =>
         {
-            isAudioReady = true;
-            audioSource.loop = true;
-            audioSource.Play();
+            UnityMainThreadDispatcher.Instance().Enqueue(() =>
+            {
+                isAudioReady = true;
+                audioSource.loop = true;
+                audioSource.Play();
+            });
         };
         msd.DecodeMedia(AVPixelFormat.AV_PIX_FMT_ARGB);
     }

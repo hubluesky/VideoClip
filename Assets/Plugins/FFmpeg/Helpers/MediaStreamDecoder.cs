@@ -9,10 +9,12 @@ public unsafe class MediaStreamDecoder : IDisposable
     public delegate void VideoCompleteDelegate(float frameRate, int width, int height);
     public delegate void AudioFrameDelegate(float[] datas);
     public delegate void AudioCompleteDelegate(int channels, int sampleRate);
+    public delegate void DecodeCompleteDelegate();
     public VideoFrameDelegate videoFrameDelegate;
     public VideoCompleteDelegate videoCompleteDelegate;
     public AudioFrameDelegate audioFrameDelegate;
     public AudioCompleteDelegate audioCompleteDelegate;
+    public DecodeCompleteDelegate decodeCompleteDelegate;
     public readonly AVHWDeviceType hwDevice;
     private readonly AVFormatContext* formatContext;
     private AVStream* videoStream;
@@ -54,6 +56,8 @@ public unsafe class MediaStreamDecoder : IDisposable
 
         ffmpeg.av_frame_free(&frame);
         ffmpeg.av_packet_free(&packet);
+
+        decodeCompleteDelegate?.Invoke();
     }
 
     private void FindMediaStreams(AVFormatContext* formatContext)
