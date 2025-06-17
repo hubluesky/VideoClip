@@ -111,12 +111,25 @@ public class VideoPlayer : MonoBehaviour
         availableHWDecoders.TryGetValue(decoderNumber, out HWtype);
     }
 
-    private unsafe void DecodeMedia(AVHWDeviceType deviceType)
+    private void DecodeMedia(AVHWDeviceType deviceType)
     {
-        // 缓存所有PCM float数据
-        using var msd = new AudioFrameConverter(videoPath);
-        List<float> allSamples = new();
+        var msd = new MediaStreamDecoder(videoPath, deviceType);
 
+        msd.videoFrameDelegate += (bytes, width, height) =>
+        {
+            Texture2D texture = new(width, height, TextureFormat.ARGB32, false);
+            texture.LoadRawTextureData(bytes);
+            texture.Apply();
+            textureFrames.Add(texture);
+        };
+
+        msd.videoCompleteDelegate += (frameRate, width, height) =>
+        {
+            frameDuration = 1 / frameRate;
+             rawImage.GetComponent<RectTransform>().sizeDelta = new Vector2(width, height);
+        };
+
+        List<float> allSamples = new();
         msd.audioFrameDelegate += (pcms) =>
         {
             allSamples.AddRange(pcms);
@@ -133,63 +146,88 @@ public class VideoPlayer : MonoBehaviour
             audioSource.loop = true;
         };
 
-        msd.Decode();
+        msd.DecodeMedia(AVPixelFormat.AV_PIX_FMT_ARGB);
     }
 
-    private unsafe void DecodeVideoToImages(VideoStreamDecoder vsd, AVHWDeviceType hwDevice)
-    {
-        using var videoContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_VIDEO, hwDevice);
-        frameDuration = 1.0f / vsd.GetFrameRate(videoContext);
+    // private unsafe void DecodeMedia(AVHWDeviceType deviceType)
+    // {
+    //     // 缓存所有PCM float数据
+    //     using var msd = new AudioFrameConverter(videoPath);
+    //     List<float> allSamples = new();
 
-        var sourceSize = new System.Drawing.Size(videoContext.width, videoContext.height);
-        var sourcePixelFormat = hwDevice == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? videoContext.pixelFormat : GetHWPixelFormat(hwDevice);
-        using var vfc = new VideoFrameConverter(sourceSize, sourcePixelFormat, sourceSize, AVPixelFormat.@AV_PIX_FMT_ARGB);
+    //     msd.audioFrameDelegate += (pcms) =>
+    //     {
+    //         allSamples.AddRange(pcms);
+    //     };
 
-        rawImage.GetComponent<RectTransform>().sizeDelta = new Vector2(sourceSize.Width, sourceSize.Height);
+    //     msd.audioCompleteDelegate += (channels, sampleRate) =>
+    //     {
+    //         // 创建 AudioClip（采样数 = 样本总数 / 通道数）
+    //         int totalSamples = allSamples.Count / channels;
+    //         AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, sampleRate, false);
+    //         clip.SetData(allSamples.ToArray(), 0);
 
-        while (vsd.TryDecodeNextFrame(videoContext, out var frame))
-        {
-            var convertedFrame = vfc.Convert(frame);
-            Texture2D texture = new(convertedFrame.width, convertedFrame.height, TextureFormat.ARGB32, false);
-            var bytes = vsd.DecodeVideoFrame(convertedFrame, true);
-            texture.LoadRawTextureData(bytes);
-            texture.Apply();
-            textureFrames.Add(texture);
-        }
+    //         audioSource.clip = clip;
+    //         audioSource.loop = true;
+    //     };
 
-    }
+    //     msd.Decode();
+    // }
 
-    private unsafe void DecodeAudioToPCM(VideoStreamDecoder vsd, AVHWDeviceType hWDevice)
-    {
-        using var audioContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_AUDIO);
-        int channels = audioContext.channels;
-        var sampleFormat = audioContext.sampleFormat;
-        // 缓存所有PCM float数据
-        List<float> allSamples = new();
+    // private unsafe void DecodeVideoToImages(VideoStreamDecoder vsd, AVHWDeviceType hwDevice)
+    // {
+    //     using var videoContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_VIDEO, hwDevice);
+    //     frameDuration = 1.0f / vsd.GetFrameRate(videoContext);
 
-        while (vsd.TryDecodeNextFrame(audioContext, out var frame))
-        {
-            vsd.DecodeAudioFrame(frame, channels, sampleFormat, out var pcmBytes, out var frameSampleCount);
-            // 将 byte[] 转 float[]（每个 float = 4 字节）
-            float[] floatSamples = new float[frameSampleCount * channels];
-            Buffer.BlockCopy(pcmBytes, 0, floatSamples, 0, pcmBytes.Length);
-            allSamples.AddRange(floatSamples);
-        }
+    //     var sourceSize = new System.Drawing.Size(videoContext.width, videoContext.height);
+    //     var sourcePixelFormat = hwDevice == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? videoContext.pixelFormat : GetHWPixelFormat(hwDevice);
+    //     using var vfc = new VideoFrameConverter(sourceSize, sourcePixelFormat, sourceSize, AVPixelFormat.@AV_PIX_FMT_ARGB);
 
-        if (allSamples.Count == 0)
-        {
-            Debug.LogWarning("音频数据为空，无法播放");
-            return;
-        }
+    //     rawImage.GetComponent<RectTransform>().sizeDelta = new Vector2(sourceSize.Width, sourceSize.Height);
 
-        // 创建 AudioClip（采样数 = 样本总数 / 通道数）
-        int totalSamples = allSamples.Count / channels;
-        AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, audioContext.sampleRate, false);
-        clip.SetData(allSamples.ToArray(), 0);
+    //     while (vsd.TryDecodeNextFrame(videoContext, out var frame))
+    //     {
+    //         var convertedFrame = vfc.Convert(frame);
+    //         Texture2D texture = new(convertedFrame.width, convertedFrame.height, TextureFormat.ARGB32, false);
+    //         var bytes = vsd.DecodeVideoFrame(convertedFrame, true);
+    //         texture.LoadRawTextureData(bytes);
+    //         texture.Apply();
+    //         textureFrames.Add(texture);
+    //     }
 
-        audioSource.clip = clip;
-        audioSource.loop = true;
-    }
+    // }
+
+    // private unsafe void DecodeAudioToPCM(VideoStreamDecoder vsd, AVHWDeviceType hWDevice)
+    // {
+    //     using var audioContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_AUDIO);
+    //     int channels = audioContext.channels;
+    //     var sampleFormat = audioContext.sampleFormat;
+    //     // 缓存所有PCM float数据
+    //     List<float> allSamples = new();
+
+    //     while (vsd.TryDecodeNextFrame(audioContext, out var frame))
+    //     {
+    //         vsd.DecodeAudioFrame(frame, channels, sampleFormat, out var pcmBytes, out var frameSampleCount);
+    //         // 将 byte[] 转 float[]（每个 float = 4 字节）
+    //         float[] floatSamples = new float[frameSampleCount * channels];
+    //         Buffer.BlockCopy(pcmBytes, 0, floatSamples, 0, pcmBytes.Length);
+    //         allSamples.AddRange(floatSamples);
+    //     }
+
+    //     if (allSamples.Count == 0)
+    //     {
+    //         Debug.LogWarning("音频数据为空，无法播放");
+    //         return;
+    //     }
+
+    //     // 创建 AudioClip（采样数 = 样本总数 / 通道数）
+    //     int totalSamples = allSamples.Count / channels;
+    //     AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, audioContext.sampleRate, false);
+    //     clip.SetData(allSamples.ToArray(), 0);
+
+    //     audioSource.clip = clip;
+    //     audioSource.loop = true;
+    // }
 
     private static AVPixelFormat GetHWPixelFormat(AVHWDeviceType hWDevice)
     {

@@ -4,7 +4,7 @@ using FFmpeg.AutoGen;
 
 public sealed unsafe class AudioFrameConverter : IDisposable
 {
-    public static readonly ulong MAX_AUDIO_FRAME_SIZE = 192000;
+    public static readonly int MAX_AUDIO_FRAME_SIZE = 192000;
     public delegate void AudioFrameDelegate(float[] datas);
     public delegate void AudioCompleteDelegate(int channels, int sampleRate);
     public AudioFrameDelegate audioFrameDelegate;
@@ -53,7 +53,7 @@ public sealed unsafe class AudioFrameConverter : IDisposable
         AVSampleFormat out_sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_FLT;
         int out_sample_rate = codecContext->sample_rate;
         int out_channels = outLayout.nb_channels;
-        byte* audioOutBuffer = (byte*)ffmpeg.av_malloc(MAX_AUDIO_FRAME_SIZE * 2);
+        byte* audioOutBuffer = (byte*)ffmpeg.av_malloc((ulong)MAX_AUDIO_FRAME_SIZE * 2);
 
         ffmpeg.swr_alloc_set_opts2(
             &swrCtx,
@@ -75,12 +75,6 @@ public sealed unsafe class AudioFrameConverter : IDisposable
                 {
                     while (ffmpeg.avcodec_receive_frame(codecContext, frame) >= 0)
                     {
-                        /*
-                          Planar（平面），其数据格式排列方式为 (特别记住，该处是以点nb_samples采样点来交错，不是以字节交错）:
-                          LLLLLLRRRRRRLLLLLLRRRRRRLLLLLLRRRRRRL...（每个LLLLLLRRRRRR为一个音频帧）
-                          而不带P的数据格式（即交错排列）排列方式为：
-                          LRLRLRLRLRLRLRLRLRLRLRLRLRLRLRLRLRLRL...（每个LR为一个音频样本）
-                        */
                         if (ffmpeg.av_sample_fmt_is_planar(codecContext->sample_fmt) >= 0)
                         {
                             byte*[] inputDataArray = new byte*[8]; // 最多支持 8 通道
@@ -92,7 +86,7 @@ public sealed unsafe class AudioFrameConverter : IDisposable
                             {
                                 convertedSamples = ffmpeg.swr_convert(
                                     swrCtx,
-                                    &audioOutBuffer, (int)MAX_AUDIO_FRAME_SIZE,
+                                    &audioOutBuffer, MAX_AUDIO_FRAME_SIZE,
                                     dataPtrs, frame->nb_samples
                                 ).ThrowExceptionIfError();
                             }
@@ -105,20 +99,6 @@ public sealed unsafe class AudioFrameConverter : IDisposable
                             float[] buffer = new float[convertedSamples * out_channels];
                             Marshal.Copy((IntPtr)audioOutBuffer, buffer, 0, buffer.Length);
                             audioFrameDelegate?.Invoke(buffer);
-
-                            // //pcm播放时是LRLRLR格式，所以要交错保存数据
-                            // int numBytes = ffmpeg.av_get_bytes_per_sample(out_sample_fmt);
-                            // for (int i = 0; i < frame->nb_samples; i++)
-                            // {
-                            //     for (int ch = 0; ch < 2; ch++)
-                            //     {
-                            //         // fwrite((char*)audioOutBuffer[ch] + numBytes * i, 1, numBytes, file);
-                            //         IntPtr bufferPtr = new IntPtr((char*)audioOutBuffer[ch] + numBytes * i);
-                            //         byte[] frameData = new byte[numBytes];
-                            //         Marshal.Copy(bufferPtr, frameData, 0, numBytes);
-                            //         audioFrameDelegate(frameData);
-                            //     }
-                            // }
                         }
                     }
                 }
@@ -128,6 +108,7 @@ public sealed unsafe class AudioFrameConverter : IDisposable
 
         audioCompleteDelegate?.Invoke(out_channels, codecContext->sample_rate);
 
+        ffmpeg.av_free(audioOutBuffer);
         ffmpeg.av_frame_free(&frame);
         ffmpeg.av_packet_free(&pkt);
         ffmpeg.avcodec_free_context(&codecContext);
