@@ -30,10 +30,7 @@ public class VideoPlayer : MonoBehaviour
 
         // decode all frames from url, please not it might local resorce, e.g. string url = "../../sample_mpeg4.mp4";
         // var url = "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"; // be advised this file holds 1440 frames
-        // using var vsd = new VideoStreamDecoder(videoPath);
 
-        // DecodeVideoToImages(vsd, deviceType);
-        // DecodeAudioToPCM(vsd, deviceType);
         DecodeMedia(deviceType);
 
         audioSource.Play();
@@ -148,86 +145,6 @@ public class VideoPlayer : MonoBehaviour
 
         msd.DecodeMedia(AVPixelFormat.AV_PIX_FMT_ARGB);
     }
-
-    // private unsafe void DecodeMedia(AVHWDeviceType deviceType)
-    // {
-    //     // 缓存所有PCM float数据
-    //     using var msd = new AudioFrameConverter(videoPath);
-    //     List<float> allSamples = new();
-
-    //     msd.audioFrameDelegate += (pcms) =>
-    //     {
-    //         allSamples.AddRange(pcms);
-    //     };
-
-    //     msd.audioCompleteDelegate += (channels, sampleRate) =>
-    //     {
-    //         // 创建 AudioClip（采样数 = 样本总数 / 通道数）
-    //         int totalSamples = allSamples.Count / channels;
-    //         AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, sampleRate, false);
-    //         clip.SetData(allSamples.ToArray(), 0);
-
-    //         audioSource.clip = clip;
-    //         audioSource.loop = true;
-    //     };
-
-    //     msd.Decode();
-    // }
-
-    // private unsafe void DecodeVideoToImages(VideoStreamDecoder vsd, AVHWDeviceType hwDevice)
-    // {
-    //     using var videoContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_VIDEO, hwDevice);
-    //     frameDuration = 1.0f / vsd.GetFrameRate(videoContext);
-
-    //     var sourceSize = new System.Drawing.Size(videoContext.width, videoContext.height);
-    //     var sourcePixelFormat = hwDevice == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? videoContext.pixelFormat : GetHWPixelFormat(hwDevice);
-    //     using var vfc = new VideoFrameConverter(sourceSize, sourcePixelFormat, sourceSize, AVPixelFormat.@AV_PIX_FMT_ARGB);
-
-    //     rawImage.GetComponent<RectTransform>().sizeDelta = new Vector2(sourceSize.Width, sourceSize.Height);
-
-    //     while (vsd.TryDecodeNextFrame(videoContext, out var frame))
-    //     {
-    //         var convertedFrame = vfc.Convert(frame);
-    //         Texture2D texture = new(convertedFrame.width, convertedFrame.height, TextureFormat.ARGB32, false);
-    //         var bytes = vsd.DecodeVideoFrame(convertedFrame, true);
-    //         texture.LoadRawTextureData(bytes);
-    //         texture.Apply();
-    //         textureFrames.Add(texture);
-    //     }
-
-    // }
-
-    // private unsafe void DecodeAudioToPCM(VideoStreamDecoder vsd, AVHWDeviceType hWDevice)
-    // {
-    //     using var audioContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_AUDIO);
-    //     int channels = audioContext.channels;
-    //     var sampleFormat = audioContext.sampleFormat;
-    //     // 缓存所有PCM float数据
-    //     List<float> allSamples = new();
-
-    //     while (vsd.TryDecodeNextFrame(audioContext, out var frame))
-    //     {
-    //         vsd.DecodeAudioFrame(frame, channels, sampleFormat, out var pcmBytes, out var frameSampleCount);
-    //         // 将 byte[] 转 float[]（每个 float = 4 字节）
-    //         float[] floatSamples = new float[frameSampleCount * channels];
-    //         Buffer.BlockCopy(pcmBytes, 0, floatSamples, 0, pcmBytes.Length);
-    //         allSamples.AddRange(floatSamples);
-    //     }
-
-    //     if (allSamples.Count == 0)
-    //     {
-    //         Debug.LogWarning("音频数据为空，无法播放");
-    //         return;
-    //     }
-
-    //     // 创建 AudioClip（采样数 = 样本总数 / 通道数）
-    //     int totalSamples = allSamples.Count / channels;
-    //     AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, audioContext.sampleRate, false);
-    //     clip.SetData(allSamples.ToArray(), 0);
-
-    //     audioSource.clip = clip;
-    //     audioSource.loop = true;
-    // }
 
     private static AVPixelFormat GetHWPixelFormat(AVHWDeviceType hWDevice)
     {

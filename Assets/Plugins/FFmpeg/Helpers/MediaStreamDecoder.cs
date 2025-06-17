@@ -43,12 +43,14 @@ public unsafe class MediaStreamDecoder : IDisposable
 
         var videoCodecContext = CreateCodecContext(videoStream);
         DecodeVideo(videoCodecContext, videoStream->index, pixelFormat, packet, frame);
+        ffmpeg.avcodec_free_context(&videoCodecContext);
 
         ffmpeg.av_seek_frame(formatContext, videoStream->index, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
 
         var audioCodecContext = CreateCodecContext(audioStream);
         audioCodecContext->pkt_timebase = audioStream->time_base;
         DecodeAudio(audioCodecContext, audioStream->index, packet, frame);
+        ffmpeg.avcodec_free_context(&audioCodecContext);
 
         ffmpeg.av_frame_free(&frame);
         ffmpeg.av_packet_free(&packet);
@@ -170,11 +172,11 @@ public unsafe class MediaStreamDecoder : IDisposable
             if (ffmpeg.av_sample_fmt_is_planar(codecContext->sample_fmt) >= 0)
             {
                 byte*[] inputDataArray = new byte*[8]; // 最多支持 8 通道
-                for (uint i = 0; i < 8; i++)
+                for (uint i = 0; i < codecContext->ch_layout.nb_channels; i++)
                     inputDataArray[i] = frame->data[i];
 
                 int convertedSamples;
-                fixed (byte** dataPtrs = inputDataArray)
+                fixed (byte** dataPtrs = &inputDataArray[0])
                 {
                     convertedSamples = ffmpeg.swr_convert(
                         swrCtx,
@@ -196,9 +198,11 @@ public unsafe class MediaStreamDecoder : IDisposable
 
         audioCompleteDelegate?.Invoke(out_channels, codecContext->sample_rate);
 
+        ffmpeg.av_channel_layout_uninit(&inLayout);
+        ffmpeg.av_channel_layout_uninit(&outLayout);
+
         ffmpeg.swr_free(&swrCtx);
         ffmpeg.av_free(audioOutBuffer);
-        ffmpeg.avcodec_free_context(&codecContext);
     }
 
     public byte[] DecodeVideoFrameToBytes(AVFrame frame, int bytesPerPixel = 4, bool flip = true)
