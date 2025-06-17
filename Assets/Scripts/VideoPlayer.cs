@@ -15,17 +15,28 @@ public class VideoPlayer : MonoBehaviour
     private float curFrameTime = 0;
     private float frameDuration;
     private RawImage rawImage;
+    private AudioSource audioSource;
 
     void Awake()
     {
         rawImage = GetComponent<RawImage>();
+        audioSource = GetComponent<AudioSource>();
 
         FFmpegBinariesHelper.RegisterFFmpegBinaries();
         print($"FFmpeg version info: {ffmpeg.av_version_info()}");
         SetupLogging();
 
         ConfigureHWDecoder(out var deviceType);
-        DecodeAllFramesToImages(videoPath, deviceType);
+
+        // decode all frames from url, please not it might local resorce, e.g. string url = "../../sample_mpeg4.mp4";
+        // var url = "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"; // be advised this file holds 1440 frames
+        // using var vsd = new VideoStreamDecoder(videoPath);
+
+        // DecodeVideoToImages(vsd, deviceType);
+        // DecodeAudioToPCM(vsd, deviceType);
+        DecodeMedia(deviceType);
+
+        audioSource.Play();
     }
 
     void Update()
@@ -77,14 +88,13 @@ public class VideoPlayer : MonoBehaviour
         HWtype = AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
         var availableHWDecoders = new Dictionary<int, AVHWDeviceType>();
 
-        Debug.Log("Select hardware decoder:");
         var type = AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
         var number = 0;
 
         while ((type = ffmpeg.av_hwdevice_iterate_types(type)) != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
         {
-            Debug.Log($"{++number}. {type}");
-            availableHWDecoders.Add(number, type);
+            availableHWDecoders.Add(++number, type);
+            // Debug.Log($"{++number}. {type}");
         }
 
         if (availableHWDecoders.Count == 0)
@@ -101,66 +111,85 @@ public class VideoPlayer : MonoBehaviour
         availableHWDecoders.TryGetValue(decoderNumber, out HWtype);
     }
 
-    private unsafe void DecodeAllFramesToImages(string url, AVHWDeviceType HWDevice)
+    private unsafe void DecodeMedia(AVHWDeviceType deviceType)
     {
-        // decode all frames from url, please not it might local resorce, e.g. string url = "../../sample_mpeg4.mp4";
-        // var url = "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"; // be advised this file holds 1440 frames
-        using var vsd = new VideoStreamDecoder(url, HWDevice);
+        // 缓存所有PCM float数据
+        using var msd = new AudioFrameConverter(videoPath);
+        List<float> allSamples = new();
 
-        frameDuration = 1.0f / vsd.FrameRate;
-        Debug.Log($"codec name: {vsd.CodecName}");
+        msd.audioFrameDelegate += (pcms) =>
+        {
+            allSamples.AddRange(pcms);
+        };
 
-        var info = vsd.GetContextInfo();
-        info.ToList().ForEach(x => Debug.Log($"{x.Key} = {x.Value}"));
+        msd.audioCompleteDelegate += (channels, sampleRate) =>
+        {
+            // 创建 AudioClip（采样数 = 样本总数 / 通道数）
+            int totalSamples = allSamples.Count / channels;
+            AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, sampleRate, false);
+            clip.SetData(allSamples.ToArray(), 0);
 
-        var sourceSize = vsd.FrameSize;
-        var sourcePixelFormat = HWDevice == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? vsd.PixelFormat : GetHWPixelFormat(HWDevice);
-        var destinationSize = sourceSize;
-        var destinationPixelFormat = AVPixelFormat.@AV_PIX_FMT_ARGB;
-        using var vfc = new VideoFrameConverter(sourceSize, sourcePixelFormat, destinationSize, destinationPixelFormat);
+            audioSource.clip = clip;
+            audioSource.loop = true;
+        };
 
-        while (vsd.TryDecodeNextFrame(out var frame))
+        msd.Decode();
+    }
+
+    private unsafe void DecodeVideoToImages(VideoStreamDecoder vsd, AVHWDeviceType hwDevice)
+    {
+        using var videoContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_VIDEO, hwDevice);
+        frameDuration = 1.0f / vsd.GetFrameRate(videoContext);
+
+        var sourceSize = new System.Drawing.Size(videoContext.width, videoContext.height);
+        var sourcePixelFormat = hwDevice == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? videoContext.pixelFormat : GetHWPixelFormat(hwDevice);
+        using var vfc = new VideoFrameConverter(sourceSize, sourcePixelFormat, sourceSize, AVPixelFormat.@AV_PIX_FMT_ARGB);
+
+        rawImage.GetComponent<RectTransform>().sizeDelta = new Vector2(sourceSize.Width, sourceSize.Height);
+
+        while (vsd.TryDecodeNextFrame(videoContext, out var frame))
         {
             var convertedFrame = vfc.Convert(frame);
-            var texture = WriteFrame(convertedFrame);
+            Texture2D texture = new(convertedFrame.width, convertedFrame.height, TextureFormat.ARGB32, false);
+            var bytes = vsd.DecodeVideoFrame(convertedFrame, true);
+            texture.LoadRawTextureData(bytes);
+            texture.Apply();
             textureFrames.Add(texture);
         }
+
     }
 
-    private unsafe Texture2D WriteFrame(AVFrame convertedFrame)
+    private unsafe void DecodeAudioToPCM(VideoStreamDecoder vsd, AVHWDeviceType hWDevice)
     {
-        int width = convertedFrame.width;
-        int height = convertedFrame.height;
+        using var audioContext = vsd.DecodeMedia(AVMediaType.AVMEDIA_TYPE_AUDIO);
+        int channels = audioContext.channels;
+        var sampleFormat = audioContext.sampleFormat;
+        // 缓存所有PCM float数据
+        List<float> allSamples = new();
 
-        int bytesPerPixel = 4; // BGRA 格式
-        int stride = width * bytesPerPixel;
-        int totalBytes = height * stride;
-
-        byte[] rawData = new byte[totalBytes];
-
-        Marshal.Copy((IntPtr)convertedFrame.data[0], rawData, 0, totalBytes);
-
-        // 就地行交换：top <-> bottom
-        byte[] tempRow = new byte[stride]; // 仅分配一个临时行缓冲区
-        for (int y = 0; y < height / 2; y++)
+        while (vsd.TryDecodeNextFrame(audioContext, out var frame))
         {
-            int topOffset = y * stride;
-            int bottomOffset = (height - 1 - y) * stride;
-
-            // Swap: temp <-> top
-            Buffer.BlockCopy(rawData, topOffset, tempRow, 0, stride);
-            Buffer.BlockCopy(rawData, bottomOffset, rawData, topOffset, stride);
-            Buffer.BlockCopy(tempRow, 0, rawData, bottomOffset, stride);
+            vsd.DecodeAudioFrame(frame, channels, sampleFormat, out var pcmBytes, out var frameSampleCount);
+            // 将 byte[] 转 float[]（每个 float = 4 字节）
+            float[] floatSamples = new float[frameSampleCount * channels];
+            Buffer.BlockCopy(pcmBytes, 0, floatSamples, 0, pcmBytes.Length);
+            allSamples.AddRange(floatSamples);
         }
 
-        // 创建 Texture2D 并加载数据
-        Texture2D texture = new(width, height, TextureFormat.ARGB32, false);
-        texture.LoadRawTextureData(rawData);
-        texture.Apply();
+        if (allSamples.Count == 0)
+        {
+            Debug.LogWarning("音频数据为空，无法播放");
+            return;
+        }
 
-        return texture;
+        // 创建 AudioClip（采样数 = 样本总数 / 通道数）
+        int totalSamples = allSamples.Count / channels;
+        AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, audioContext.sampleRate, false);
+        clip.SetData(allSamples.ToArray(), 0);
+
+        audioSource.clip = clip;
+        audioSource.loop = true;
     }
-
 
     private static AVPixelFormat GetHWPixelFormat(AVHWDeviceType hWDevice)
     {
