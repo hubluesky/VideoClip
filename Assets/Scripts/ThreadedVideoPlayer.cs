@@ -11,6 +11,7 @@ using UnityEngine.UI;
 public class ThreadedVideoPlayer : MonoBehaviour
 {
     public string videoPath;
+    public Slider slider;
 
     private readonly List<Texture2D> textureFrames = new();
     private readonly List<float> framePts = new();
@@ -19,7 +20,7 @@ public class ThreadedVideoPlayer : MonoBehaviour
     private AudioSource audioSource;
 
     private Thread decodeThread;
-    private bool isAudioReady = false;
+    private bool isReadyToPlay = false;
 
     void Start()
     {
@@ -36,11 +37,13 @@ public class ThreadedVideoPlayer : MonoBehaviour
         decodeThread = new Thread(() => DecodeMedia(deviceType));
         decodeThread.IsBackground = true;
         decodeThread.Start();
+
+        slider?.onValueChanged.AddListener(Seek);
     }
 
     void Update()
     {
-        if (!isAudioReady || textureFrames.Count == 0 || framePts.Count == 0) return;
+        if (!isReadyToPlay || textureFrames.Count == 0 || framePts.Count == 0) return;
 
         float currentTime = audioSource.time;
 
@@ -53,6 +56,9 @@ public class ThreadedVideoPlayer : MonoBehaviour
                 break;
             }
         }
+
+        if (slider != null)
+            slider.SetValueWithoutNotify(currentTime / audioSource.clip.length);
     }
 
     private void OnDestroy()
@@ -61,8 +67,26 @@ public class ThreadedVideoPlayer : MonoBehaviour
 
         foreach (var texture in textureFrames)
             Destroy(texture);
-            
+
         textureFrames.Clear();
+    }
+
+    public void PlayOrPause()
+    {
+        if (!isReadyToPlay) return;
+
+        if (audioSource.isPlaying)
+            audioSource.Pause();
+        else
+            audioSource.Play();
+    }
+
+    public void Seek(float value)
+    {
+        if (!isReadyToPlay) return;
+
+        audioSource.time = value * audioSource.clip.length;
+        audioSource.Pause();
     }
 
     private static unsafe void SetupLogging()
@@ -172,8 +196,8 @@ public class ThreadedVideoPlayer : MonoBehaviour
         {
             UnityMainThreadDispatcher.Instance().Enqueue(() =>
             {
-                isAudioReady = true;
-                audioSource.loop = true;
+                isReadyToPlay = true;
+                // audioSource.loop = true;
                 audioSource.Play();
             });
         };
