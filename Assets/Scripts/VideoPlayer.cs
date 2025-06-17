@@ -9,13 +9,14 @@ using UnityEngine.UI;
 public class VideoPlayer : MonoBehaviour
 {
     public string videoPath;
+
     private readonly List<Texture2D> textureFrames = new();
-    private int indexFrame = 0;
-    private float lastFrameTime = 0;
-    private float curFrameTime = 0;
-    private float frameDuration;
+    private readonly List<float> framePts = new();
+
     private RawImage rawImage;
     private AudioSource audioSource;
+
+    private bool isAudioReady = false;
 
     void Awake()
     {
@@ -23,29 +24,28 @@ public class VideoPlayer : MonoBehaviour
         audioSource = GetComponent<AudioSource>();
 
         FFmpegBinariesHelper.RegisterFFmpegBinaries();
-        print($"FFmpeg version info: {ffmpeg.av_version_info()}");
-        SetupLogging();
+        Debug.Log($"FFmpeg version: {ffmpeg.av_version_info()}");
 
+        SetupLogging();
         ConfigureHWDecoder(out var deviceType);
 
-        // decode all frames from url, please not it might local resorce, e.g. string url = "../../sample_mpeg4.mp4";
-        // var url = "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"; // be advised this file holds 1440 frames
-
         DecodeMedia(deviceType);
-
-        audioSource.Play();
     }
 
     void Update()
     {
-        if (textureFrames.Count <= 0) return;
+        if (!isAudioReady || textureFrames.Count == 0 || framePts.Count == 0) return;
 
-        var lastTime = lastFrameTime;
-        curFrameTime += Time.deltaTime;
-        if (curFrameTime - lastTime > frameDuration)
+        float currentTime = audioSource.time;
+
+        // 找到当前时间对应的图像帧
+        for (int i = 0; i < framePts.Count - 1; i++)
         {
-            lastFrameTime = curFrameTime;
-            rawImage.texture = textureFrames[++indexFrame % textureFrames.Count];
+            if (framePts[i] <= currentTime && currentTime < framePts[i + 1])
+            {
+                rawImage.texture = textureFrames[i];
+                break;
+            }
         }
     }
 
@@ -112,56 +112,41 @@ public class VideoPlayer : MonoBehaviour
     {
         var msd = new MediaStreamDecoder(videoPath, deviceType);
 
-        msd.videoFrameDelegate += (bytes, width, height) =>
+        // 记录图像帧和对应的显示时间
+        msd.videoFrameDelegate += (bytes, width, height, ptsSec) =>
         {
             Texture2D texture = new(width, height, TextureFormat.ARGB32, false);
             texture.LoadRawTextureData(bytes);
             texture.Apply();
             textureFrames.Add(texture);
+            framePts.Add(ptsSec);
         };
 
         msd.videoCompleteDelegate += (frameRate, width, height) =>
         {
-            frameDuration = 1 / frameRate;
-             rawImage.GetComponent<RectTransform>().sizeDelta = new Vector2(width, height);
+            rawImage.rectTransform.sizeDelta = new Vector2(width, height);
         };
 
+        // 音频缓存
         List<float> allSamples = new();
-        msd.audioFrameDelegate += (pcms) =>
+
+        msd.audioFrameDelegate += (pcmSamples) =>
         {
-            allSamples.AddRange(pcms);
+            allSamples.AddRange(pcmSamples);
         };
 
         msd.audioCompleteDelegate += (channels, sampleRate) =>
         {
-            // 创建 AudioClip（采样数 = 样本总数 / 通道数）
             int totalSamples = allSamples.Count / channels;
             AudioClip clip = AudioClip.Create("DecodedAudio", totalSamples, channels, sampleRate, false);
             clip.SetData(allSamples.ToArray(), 0);
 
             audioSource.clip = clip;
             audioSource.loop = true;
+            isAudioReady = true;
+            audioSource.Play(); // 在准备完之后播放
         };
 
         msd.DecodeMedia(AVPixelFormat.AV_PIX_FMT_ARGB);
-    }
-
-    private static AVPixelFormat GetHWPixelFormat(AVHWDeviceType hWDevice)
-    {
-        return hWDevice switch
-        {
-            AVHWDeviceType.AV_HWDEVICE_TYPE_NONE => AVPixelFormat.AV_PIX_FMT_NONE,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_VDPAU => AVPixelFormat.AV_PIX_FMT_VDPAU,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_CUDA => AVPixelFormat.AV_PIX_FMT_CUDA,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_VAAPI => AVPixelFormat.AV_PIX_FMT_VAAPI,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_DXVA2 => AVPixelFormat.AV_PIX_FMT_NV12,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_QSV => AVPixelFormat.AV_PIX_FMT_QSV,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_VIDEOTOOLBOX => AVPixelFormat.AV_PIX_FMT_VIDEOTOOLBOX,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA => AVPixelFormat.AV_PIX_FMT_NV12,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_DRM => AVPixelFormat.AV_PIX_FMT_DRM_PRIME,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_OPENCL => AVPixelFormat.AV_PIX_FMT_OPENCL,
-            AVHWDeviceType.AV_HWDEVICE_TYPE_MEDIACODEC => AVPixelFormat.AV_PIX_FMT_MEDIACODEC,
-            _ => AVPixelFormat.AV_PIX_FMT_NONE
-        };
     }
 }

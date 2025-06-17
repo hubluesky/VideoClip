@@ -5,7 +5,7 @@ using FFmpeg.AutoGen;
 public unsafe class MediaStreamDecoder : IDisposable
 {
     public static readonly int MAX_AUDIO_FRAME_SIZE = 192000;
-    public delegate void VideoFrameDelegate(byte[] datas, int width, int height);
+    public delegate void VideoFrameDelegate(byte[] data, int width, int height, float pts);
     public delegate void VideoCompleteDelegate(float frameRate, int width, int height);
     public delegate void AudioFrameDelegate(float[] datas);
     public delegate void AudioCompleteDelegate(int channels, int sampleRate);
@@ -42,7 +42,7 @@ public unsafe class MediaStreamDecoder : IDisposable
         var frame = ffmpeg.av_frame_alloc();
 
         var videoCodecContext = CreateCodecContext(videoStream);
-        DecodeVideo(videoCodecContext, videoStream->index, pixelFormat, packet, frame);
+        DecodeVideo(videoCodecContext, videoStream->index, ffmpeg.av_q2d(videoStream->time_base), pixelFormat, packet, frame);
         ffmpeg.avcodec_free_context(&videoCodecContext);
 
         ffmpeg.av_seek_frame(formatContext, videoStream->index, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
@@ -113,7 +113,7 @@ public unsafe class MediaStreamDecoder : IDisposable
         return frame;
     }
 
-    public void DecodeVideo(AVCodecContext* codecContext, int streamIndex, AVPixelFormat pixelFormat, AVPacket* packet, AVFrame* frame)
+    public void DecodeVideo(AVCodecContext* codecContext, int streamIndex, double timeBase, AVPixelFormat pixelFormat, AVPacket* packet, AVFrame* frame)
     {
         var sourceSize = new System.Drawing.Size(codecContext->width, codecContext->height);
         var sourcePixelFormat = hwDevice == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? codecContext->pix_fmt : GetHWPixelFormat(hwDevice);
@@ -133,7 +133,8 @@ public unsafe class MediaStreamDecoder : IDisposable
 
             var convertedFrame = vfc.Convert(*outFrame);
             var bytes = DecodeVideoFrameToBytes(convertedFrame);
-            videoFrameDelegate?.Invoke(bytes, convertedFrame.width, convertedFrame.height);
+
+            videoFrameDelegate?.Invoke(bytes, convertedFrame.width, convertedFrame.height, (float)(frame->pts * timeBase));
         }
 
         ffmpeg.av_frame_free(&receivedFrame);
