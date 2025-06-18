@@ -437,7 +437,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f1b18029f52c30a419e6c50be1f6f4a0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  videoPath: E:/unityspace/VideoClip/Assets/sample.mp4
+  videoPath: sample.mp4
 --- !u!114 &794900390
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -574,7 +574,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3702ea438597aa148a023878e3d10424, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  videoPath: E:/unityspace/VideoClip/Assets/sample.mp4
+  videoPath: sample.mp4
   slider: {fileID: 337260950}
 --- !u!1 &867847524
 GameObject:

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -120,7 +121,8 @@ public class VideoPlayer : MonoBehaviour
 
     private void DecodeMedia(AVHWDeviceType deviceType)
     {
-        var msd = new MediaStreamDecoder(videoPath, deviceType);
+        var videoFilePath = Path.Join(Application.dataPath, videoPath);
+        var msd = new MediaStreamDecoder(videoFilePath, deviceType);
 
         // 记录图像帧和对应的显示时间
         msd.videoFrameDelegate += (bytes, width, height, ptsSec) =>

@@ -9,15 +9,15 @@ namespace FFmpeg.AutoGen
     {
         public static PlatformID GetPlatformId()
         {
-#if NETSTANDARD2_0_OR_GREATER
+// #if NETSTANDARD2_0_OR_GREATER
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return PlatformID.Win32NT;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return PlatformID.Unix;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) return PlatformID.MacOSX;
             throw new PlatformNotSupportedException();
-#else
-        return Environment.OSVersion.Platform;
+// #else
+//         return Environment.OSVersion.Platform;
 
-#endif
+// #endif
         }
 
         public static IFunctionResolver Create()
