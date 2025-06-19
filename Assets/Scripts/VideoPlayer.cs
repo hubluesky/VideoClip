@@ -31,8 +31,8 @@ public class VideoPlayer : MonoBehaviour
 
         SetupLogging();
         ConfigureHWDecoder(out var deviceType);
-
-        DecodeMedia(deviceType);
+        // 这个写法，其它系统还不支持硬件加速。
+        DecodeMedia(AVHWDeviceType.AV_HWDEVICE_TYPE_NONE);
     }
 
     private void OnDestroy()

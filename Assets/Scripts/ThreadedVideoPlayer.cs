@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
 using FFmpeg.AutoGen;
 using UnityEngine;
 using UnityEngine.UI;
@@ -35,7 +34,7 @@ public class ThreadedVideoPlayer : MonoBehaviour
         ConfigureHWDecoder(out var deviceType);
 
         UnityMainThreadDispatcher.Instance();
-        decodeThread = new Thread(() => DecodeMedia(deviceType));
+        decodeThread = new Thread(() => DecodeMedia(AVHWDeviceType.AV_HWDEVICE_TYPE_NONE));// 这个写法，其它系统还不支持硬件加速。
         decodeThread.IsBackground = true;
         decodeThread.Start();
 
